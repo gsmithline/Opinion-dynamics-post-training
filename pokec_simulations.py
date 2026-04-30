@@ -372,8 +372,12 @@ class SigmoidMLP(nn.Module):
         return self.net(x).squeeze(1)
 
 
-def predicting(model_name, X_features_labeled, y_label, X_features_unlabeled):
-    
+def predicting(model_name, X_features_labeled, y_label, X_features_unlabeled,
+               df_labeled=None, df_unlabeled=None, sim_params=None):
+
+    if model_name == "llm":
+        from llm_predictor import predicting_llm
+        return predicting_llm(df_labeled, y_label, df_unlabeled, sim_params=sim_params)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X_features_labeled, y_label, test_size=0.2, random_state=2026
@@ -454,7 +458,9 @@ def run_simulation(
         policy,
         model_name,
         X_features_labeled,
-        X_features_unlabeled
+        X_features_unlabeled,
+        df_labeled=None,
+        df_unlabeled=None,
 ):
     agent_num = len(x_star)
     n = int(agent_num * 0.8)
@@ -473,8 +479,43 @@ def run_simulation(
     x_unlabeled_prior = x_star[n:].copy()
     whole_record[:, 0] = copy.deepcopy(x_star)
     platform_predictions = np.zeros(agent_num)
+
+    x_star_mean = float(np.mean(x_star))
+    x_star_std = float(np.std(x_star))
+    sim_params = {
+        "agent_num": agent_num,
+        "n_labeled": n,
+        "n_unlabeled": agent_num - n,
+        "retrain_steps": retrain_steps,
+        "fj_steps": fj_steps,
+        "policy": policy,
+        "model_name": model_name,
+        "platform_sus_mean": float(np.mean(platform_params)),
+        "platform_sus_std": float(np.std(platform_params)),
+        "peer_sus_mean": float(np.mean(peer_params)),
+        "peer_sus_std": float(np.std(peer_params)),
+        "steer_strength_mean": float(np.mean(steering_params)),
+        "steer_strength_std": float(np.std(steering_params)),
+        "x_star_mean": x_star_mean,
+        "x_star_std": x_star_std,
+    }
+
     for t in range(retrain_steps):
-         
+        print(f"[run_simulation] round {t+1}/{retrain_steps} starting ({model_name})", flush=True)
+
+        # Log input-target distribution stats BEFORE SFT (decouples FJ-compression from LLM-compression)
+        try:
+            import wandb
+            if wandb.run is not None:
+                wandb.log({
+                    "round": t + 1,
+                    "target_std": float(np.std(x_labeled_prior)),
+                    "target_mean": float(np.mean(x_labeled_prior)),
+                    "target_range": float(np.max(x_labeled_prior) - np.min(x_labeled_prior)),
+                })
+        except Exception:
+            pass
+
         if policy == 'sl':
             # supervised learning policy
             # assume the initial predictions are the innate opinions
@@ -482,33 +523,89 @@ def run_simulation(
             if model_name == 'perfect':
                 platform_predictions[n:] = copy.deepcopy(x_unlabeled_prior)
             else:
-                platform_predictions[n:] = predicting(model_name, X_features_labeled, x_labeled_prior, X_features_unlabeled)
+                platform_predictions[n:] = predicting(model_name, X_features_labeled, x_labeled_prior, X_features_unlabeled,
+                                                      df_labeled=df_labeled, df_unlabeled=df_unlabeled,
+                                                      sim_params=sim_params)
 
         else:
             # steering policy
             x_prior = np.concatenate((x_labeled_prior, x_unlabeled_prior))
             platform_predictions = steering_params * steering_vector + np.diag(np.ones(agent_num) - steering_params) @ x_prior
-        x_zero = np.diag(np.ones(agent_num) - platform_params) @ x_star + platform_params * platform_predictions 
+        x_zero = (1.0 - platform_params) * x_star + platform_params * platform_predictions
         x_temp = copy.deepcopy(x_zero)
+        # Precompute row-normalized weight matrix once per round (W/deg)
+        normalized_w = weight_mat * degs_inv[:, None]
+        one_minus_peer = 1.0 - peer_params
         for k in range(fj_steps):
-
-            x_temp = peer_params * x_zero + np.diag(np.ones(agent_num) - peer_params) @ np.diag(degs_inv) @ weight_mat @ x_temp
+            x_temp = peer_params * x_zero + one_minus_peer * (normalized_w @ x_temp)
 
         
         whole_record[:, t+1] = copy.deepcopy(x_temp)
         x_labeled_prior = copy.deepcopy(x_temp[:n])
         x_unlabeled_prior = copy.deepcopy(x_temp[n:])
+
+        # Log population opinion stats per round
+        try:
+            import wandb
+            if wandb.run is not None:
+                dist_to_innate = float(np.linalg.norm(x_temp - x_star) / np.sqrt(agent_num))
+                dist_to_uniform_mean = float(np.std(x_temp))  # 0 iff fully homogenized
+                wandb.log({
+                    "round": t + 1,
+                    "opinion_mean": float(np.mean(x_temp)),
+                    "opinion_std": float(np.std(x_temp)),
+                    "opinion_min": float(np.min(x_temp)),
+                    "opinion_max": float(np.max(x_temp)),
+                    "opinion_q25": float(np.quantile(x_temp, 0.25)),
+                    "opinion_q75": float(np.quantile(x_temp, 0.75)),
+                    "dist_to_innate": dist_to_innate,
+                    "opinion_range": float(np.max(x_temp) - np.min(x_temp)),
+                    "opinion_hist": wandb.Histogram(x_temp, num_bins=40),
+                    # Mean drift: how far the population has moved from innate
+                    "mean_drift_from_innate": float(np.mean(x_temp) - x_star_mean),
+                    "abs_mean_drift_from_innate": float(abs(np.mean(x_temp) - x_star_mean)),
+                    "std_ratio_to_innate": float(np.std(x_temp) / max(x_star_std, 1e-9)),
+                })
+        except Exception as e:
+            print(f"[sim] wandb log skipped: {e}")
+
     return whole_record
 
 
 
 
-def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_features_labeled, X_features_unlabeled):
+def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_features_labeled, X_features_unlabeled,
+                         df_labeled=None, df_unlabeled=None):
     
     agent_num = len(innate_opinions)
     fj_K = 100
-    retrain_T = 20
+    retrain_T = int(os.environ.get("RETRAIN_T", 20))
     x_initial = copy.deepcopy(innate_opinions)
+
+    # Init wandb for ALL model_name values (baselines too) so opinion_std gets logged
+    run_tag_env = os.environ.get("RUN_TAG", "")
+    try:
+        import wandb
+        if wandb.run is None:
+            wandb.init(
+                project="opinion-dynamics-llm",
+                name=run_tag_env if run_tag_env else model_name,
+                config={
+                    "model_name": model_name,
+                    "run_tag": run_tag_env,
+                    "retrain_T": retrain_T,
+                    "fj_K": fj_K,
+                    "agent_num": agent_num,
+                },
+                reinit=False,
+            )
+        wandb.define_metric("round")
+        for pat in ("opinion_*", "pred_*", "dist_to_innate", "opinion_range",
+                    "mean_drift_from_innate", "abs_mean_drift_from_innate",
+                    "std_ratio_to_innate", "target_*", "parse_fail_*"):
+            wandb.define_metric(pat, step_metric="round")
+    except Exception as e:
+        print(f"[run_opinion_dynamics] wandb init skipped: {e}")
 
     param_folder = "pokec_dataset/parametric_params/"
     realworld_params = Path(param_folder)
@@ -553,10 +650,14 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
     platform_sus = np.ones(agent_num)
     steer_strength = np.zeros(agent_num)
     results_folder = "pokec_dataset/results/"
-    if os.path.exists(results_folder + model_name + "_equilibrium.pk"):
-        with open(results_folder + model_name + "_equilibrium.pk", "rb") as f:
+    os.makedirs(results_folder, exist_ok=True)
+    run_tag = os.environ.get("RUN_TAG", "")   # append to cache filenames to avoid overwriting across configs
+    # avoid "perfect_perfect"-style filenames when RUN_TAG equals model_name
+    cache_key = model_name if (not run_tag or run_tag == model_name) else f"{model_name}_{run_tag}"
+    if os.path.exists(results_folder + cache_key + "_equilibrium.pk"):
+        with open(results_folder + cache_key + "_equilibrium.pk", "rb") as f:
             perform_equilibrium = pickle.load(f)
-        with open(results_folder + model_name + "_FJequilibrium.pk", "rb") as f:
+        with open(results_folder + cache_key + "_FJequilibrium.pk", "rb") as f:
             FJ_equilibrium = pickle.load(f)
     else:
 
@@ -564,7 +665,8 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
                                             peer_params=peer_sus, steering_params=steer_strength, 
                                             steering_vector=None, fj_steps=fj_K, retrain_steps=retrain_T, 
                                             x_star=innate_opinions, policy='sl', model_name=model_name, 
-                                            X_features_labeled=X_features_labeled, X_features_unlabeled=X_features_unlabeled)
+                                            X_features_labeled=X_features_labeled, X_features_unlabeled=X_features_unlabeled,
+                                            df_labeled=df_labeled, df_unlabeled=df_unlabeled)
 
         interval_num = retrain_T
         heatmap_res1 = np.zeros((agent_num, interval_num+1))
@@ -576,10 +678,13 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
         x = np.arange(1, agent_num+1)
         FJ_equilibrium = heatmap_res1[:, 1]
         perform_equilibrium = heatmap_res1[:, -1]
-        with open(results_folder + model_name + "_equilibrium.pk", "wb") as f:
+        with open(results_folder + cache_key + "_equilibrium.pk", "wb") as f:
             pickle.dump(perform_equilibrium, f)
-        with open(results_folder + model_name + "_FJequilibrium.pk", "wb") as f:
+        with open(results_folder + cache_key + "_FJequilibrium.pk", "wb") as f:
             pickle.dump(FJ_equilibrium, f)
+        # Full per-round trajectory: shape (agent_num, retrain_T+1), columns = rounds 0..T
+        with open(results_folder + cache_key + "_trajectory.pk", "wb") as f:
+            pickle.dump(heatmap_res1, f)
         
     
     # reference with perfect predictions are pre-generated
@@ -684,7 +789,6 @@ def plot_adjust(model_name):
 
 def main():
     args = parse_args()
-    # select the feature to be predicted, choose relation_to_smoking as the target label
     target_column = "relation_to_smoking"
 
     if os.path.exists("pokec_dataset/lcc_profiles_" + target_column + ".pk"):
@@ -747,7 +851,7 @@ def main():
 
     
     
-    if os.path.exists("pokec_dataset/labled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk"): 
+    if os.path.exists("pokec_dataset/labeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk"): 
         with open("pokec_dataset/labeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "rb") as f:
             X_features_labeled = pickle.load(f)
         print("Feature matrix shape:", X_features_labeled.shape)
@@ -761,14 +865,15 @@ def main():
         with open("pokec_dataset/unlabeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "wb") as f:
             pickle.dump(X_features_unlabeled, f)
     
-    model_name = "mean"  # "neural_net" or "ridge" or "mean" or "perfect"
+    model_name = os.environ.get("MODEL_NAME", "llm")  # "neural_net" | "ridge" | "mean" | "perfect" | "llm"
     # computed sentiment scores are assumed to be innate opinions, x_star
     innate_opinions = np.array(y_label + y_unlabel_label)
-    adjust_plot = True 
+    adjust_plot = False 
     if adjust_plot:
         plot_adjust(model_name)
     else: 
-        run_opinion_dynamics(innate_opinions, network_lcc, df["user_id"].values, model_name, X_features_labeled, X_features_unlabeled)
+        run_opinion_dynamics(innate_opinions, network_lcc, df["user_id"].values, model_name, X_features_labeled, X_features_unlabeled,
+                             df_labeled=df_labeled, df_unlabeled=df_unlabeled)
 
 
 

@@ -540,7 +540,7 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
     # this is to reveal the steer effect on the stubborn node.
     # innate_opinions = np.zeros(agent_num)
     fj_K = 100
-    retrain_T = 30
+    retrain_T = 4
     x_initial = copy.deepcopy(innate_opinions)
 
     param_folder = "pokec_dataset/parametric_params/"
@@ -646,7 +646,7 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
 
 def plot_adjust(innate_opinions, policy, strong_perform):
     agent_num = len(innate_opinions)
-    retrain_T = 30
+    retrain_T = 4
     if strong_perform:
         results_folder = "pokec_dataset/results_strong_perform/"
     else:
@@ -772,7 +772,7 @@ def plot_adjust(innate_opinions, policy, strong_perform):
 
 def main():
     args = parse_args()
-    # select the feature to be predicted, choose relation_to_smoking as the target label
+
     target_column = "relation_to_smoking"
 
     if os.path.exists("pokec_dataset/lcc_profiles_" + target_column + ".pk"):
@@ -805,7 +805,7 @@ def main():
         numerical_features_extended = numerical_features.copy()
     
     # assume we don't have access to the label of the 20% population
-    n = int(len(df) * 0.8)
+    n = int(len(df) * 0.8) 
     df_labeled = df.iloc[:n].copy()
     df_unlabeled = df.iloc[n:].copy()
     # we compute the sentiment scores as innate opinions of individuals

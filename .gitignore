@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Run artifacts (checkpoints, adapters, wandb local runs)
+llm_ckpt/
+adapters/
+wandb/
+
+# Local outputs
+results/
+results_strong_perform/
+figs/
+pokec_dataset/results/
+pokec_dataset/parametric_params/*.pdf
+
+# Editor / env
+.idea/
+.vscode/
+.env
+.venv/
+*.swp
+
+# Logs
+tea_debug.log
+*.log
