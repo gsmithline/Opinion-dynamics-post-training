@@ -711,7 +711,7 @@ def sft_on_round(model, tok, prompts_labeled, y_labeled, prompts_unlabeled=None)
 
 
 
-def rl_kl_on_round(model, tok, prompts_labeled, y_labeled, df_labeled):
+def rl_kl_on_round(model, tok, prompts_labeled, y_labeled, df_labeled, prompts_unlabeled=None):
     """Form (II) Korbak-Williams KL-RL training round.
 
     1. Fit a K-class reward model h_p on (df_labeled features, bin(y_labeled)).
@@ -791,6 +791,42 @@ def rl_kl_on_round(model, tok, prompts_labeled, y_labeled, df_labeled):
             print(f"[rl_kl-sanity] check failed: {e}")
 
     trainer.train()
+
+    if SAVE_ADAPTER:
+        if ADAPTER_SAVE_DIR:
+            save_root = ADAPTER_SAVE_DIR
+        else:
+            tag = os.environ.get("RUN_TAG", "")
+            if not tag:
+                rank_str = str(LORA_R) if USE_LORA else "ff"
+                tag = f"{TRAINING_STYLE}_b{KL_BETA}_r{rank_str}"
+            save_root = f"./adapters/{tag}"
+        round_num = _STATE["round"]
+        if SAVE_ADAPTER_PER_ROUND:
+            if round_num % SAVE_ADAPTER_EVERY_N_ROUNDS != 0:
+                save_dir = None
+            else:
+                save_dir = os.path.join(save_root, f"round_{round_num}")
+        else:
+            save_dir = save_root
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+            try:
+                model.save_pretrained(save_dir)
+                print(f"[save_adapter] round {round_num}: wrote adapter to {save_dir}")
+            except Exception as e:
+                print(f"[save_adapter] round {round_num}: save failed: {e}")
+        if SAVE_PROMPTS:
+            os.makedirs(save_root, exist_ok=True)
+            try:
+                with open(os.path.join(save_root, "prompts_labeled.json"), "w") as f:
+                    json.dump(list(prompts_labeled), f)
+                if prompts_unlabeled is not None:
+                    with open(os.path.join(save_root, "prompts_unlabeled.json"), "w") as f:
+                        json.dump(list(prompts_unlabeled), f)
+            except Exception as e:
+                print(f"[save_adapter] round {round_num}: prompts save failed: {e}")
+
     return model
 
 
@@ -843,7 +879,8 @@ def predicting_llm(df_labeled, y_labeled, df_unlabeled, sim_params=None):
 
     # Train on D^(t-1) = (prompts_labeled, y_labeled)
     if TRAINING_STYLE == "rl_kl":
-        rl_kl_on_round(model, tok, prompts_labeled, np.asarray(y_labeled), df_labeled)
+        rl_kl_on_round(model, tok, prompts_labeled, np.asarray(y_labeled), df_labeled,
+                       prompts_unlabeled=prompts_unlabeled)
     else:
         sft_on_round(model, tok, prompts_labeled, np.asarray(y_labeled),
                      prompts_unlabeled=prompts_unlabeled)

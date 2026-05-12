@@ -1,0 +1,4 @@
+fj_rlkl_b0p01_egta   rl_kl    0.01
+fj_rlkl_b0p1_egta    rl_kl    0.1
+fj_rlkl_b1_egta      rl_kl    1.0
+fj_rlkl_b10_egta     rl_kl    10.0
