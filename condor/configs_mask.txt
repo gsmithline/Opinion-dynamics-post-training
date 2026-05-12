@@ -1,0 +1,5 @@
+llm_sft_mask         sft     0.0
+llm_sftkl_mask_b0p3  sft_kl  0.3
+llm_sftkl_mask_b1    sft_kl  1.0
+llm_sftkl_mask_b3    sft_kl  3.0
+llm_sftkl_mask_b10   sft_kl  10.0

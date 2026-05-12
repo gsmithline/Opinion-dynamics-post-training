@@ -1,0 +1,4 @@
+llm_7b_r512_b0        sft       0.0
+llm_7b_r512_b0p1      sft_kl    0.1
+llm_7b_r512_b0p5      sft_kl    0.5
+llm_7b_r512_b1        sft_kl    1.0

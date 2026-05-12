@@ -1,0 +1,5 @@
+llm_7b_sft          sft     0.0
+llm_7b_sftkl_b0p3   sft_kl  0.3
+llm_7b_sftkl_b1     sft_kl  1.0
+llm_7b_sftkl_b3     sft_kl  3.0
+llm_7b_sftkl_b10    sft_kl  10.0

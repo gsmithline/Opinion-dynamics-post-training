@@ -1,0 +1,28 @@
+# One-off probe: measure Qwen-7B token-level mass on low digits.
+# Submit with:  condor_submit_bid 15 condor/probe_digit_prior.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/miniconda3/envs/opdyn/bin/python
+arguments         = probe_digit_prior.py
+
+initialdir        = /home/gsmithline/Opinion-dynamics-post-training
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 20G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 40000)
+
+getenv            = False
+environment       = "HF_HOME=/is/cluster/gsmithline/.cache/huggingface PATH=/home/gsmithline/miniconda3/envs/opdyn/bin:/usr/bin:/bin"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/probe_digit_prior.out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/probe_digit_prior.err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/probe_digit_prior.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+
+queue 1

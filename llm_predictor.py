@@ -10,6 +10,7 @@ theta^(t) warm-starts from theta^(t-1). First call loads the base model and
 wraps with LoRA. Reference policy theta_0 is a frozen copy for KL (v1).
 """
 
+import json
 import os
 import re
 import copy
@@ -60,7 +61,16 @@ DEVICE = "cuda" if torch.cuda.is_available() else ("mps" if torch.backends.mps.i
 # ./adapters/$RUN_TAG path. READOUT_TEMPERATURE>0 switches readout from greedy to
 # stochastic sampling at that temperature (for measuring distributional width at the
 # plateau rather than just the greedy mode).
+#
+# SAVE_ADAPTER_PER_ROUND=1 (only honored when SAVE_ADAPTER=1) writes to
+# {save_dir}/round_{round} every SAVE_ADAPTER_EVERY_N_ROUNDS rounds, leaving prior
+# rounds in place. SAVE_PROMPTS=1 dumps the round's labeled prompts as JSON in the
+# save_dir root so cross-evaluation pipelines (e.g. EGTA FJ adapter) can re-tokenize
+# the same way the run trained.
 SAVE_ADAPTER = os.environ.get("SAVE_ADAPTER", "0") == "1"
+SAVE_ADAPTER_PER_ROUND = os.environ.get("SAVE_ADAPTER_PER_ROUND", "0") == "1"
+SAVE_ADAPTER_EVERY_N_ROUNDS = int(os.environ.get("SAVE_ADAPTER_EVERY_N_ROUNDS", 5))
+SAVE_PROMPTS = os.environ.get("SAVE_PROMPTS", "0") == "1"
 ADAPTER_SAVE_DIR = os.environ.get("ADAPTER_SAVE_DIR", "")
 READOUT_TEMPERATURE = float(os.environ.get("READOUT_TEMPERATURE", "0"))
 
@@ -602,7 +612,7 @@ class RLKLOpdynTrainer(SFTTrainer):
         return loss
 
 
-def sft_on_round(model, tok, prompts_labeled, y_labeled):
+def sft_on_round(model, tok, prompts_labeled, y_labeled, prompts_unlabeled=None):
     targets = [f"{float(y):.2f}" for y in y_labeled]
 
     ds = Dataset.from_dict({"prompt": list(prompts_labeled), "completion": targets})
@@ -664,19 +674,38 @@ def sft_on_round(model, tok, prompts_labeled, y_labeled):
 
     if SAVE_ADAPTER:
         if ADAPTER_SAVE_DIR:
-            save_dir = ADAPTER_SAVE_DIR
+            save_root = ADAPTER_SAVE_DIR
         else:
             tag = os.environ.get("RUN_TAG", "")
             if not tag:
                 rank_str = str(LORA_R) if USE_LORA else "ff"
                 tag = f"{TRAINING_STYLE}_b{KL_BETA}_r{rank_str}"
-            save_dir = f"./adapters/{tag}"
-        os.makedirs(save_dir, exist_ok=True)
-        try:
-            model.save_pretrained(save_dir)
-            print(f"[save_adapter] round {_STATE['round']}: wrote adapter to {save_dir}")
-        except Exception as e:
-            print(f"[save_adapter] round {_STATE['round']}: save failed: {e}")
+            save_root = f"./adapters/{tag}"
+        round_num = _STATE["round"]
+        if SAVE_ADAPTER_PER_ROUND:
+            if round_num % SAVE_ADAPTER_EVERY_N_ROUNDS != 0:
+                save_dir = None
+            else:
+                save_dir = os.path.join(save_root, f"round_{round_num}")
+        else:
+            save_dir = save_root
+        if save_dir is not None:
+            os.makedirs(save_dir, exist_ok=True)
+            try:
+                model.save_pretrained(save_dir)
+                print(f"[save_adapter] round {round_num}: wrote adapter to {save_dir}")
+            except Exception as e:
+                print(f"[save_adapter] round {round_num}: save failed: {e}")
+        if SAVE_PROMPTS:
+            os.makedirs(save_root, exist_ok=True)
+            try:
+                with open(os.path.join(save_root, "prompts_labeled.json"), "w") as f:
+                    json.dump(list(prompts_labeled), f)
+                if prompts_unlabeled is not None:
+                    with open(os.path.join(save_root, "prompts_unlabeled.json"), "w") as f:
+                        json.dump(list(prompts_unlabeled), f)
+            except Exception as e:
+                print(f"[save_adapter] round {round_num}: prompts save failed: {e}")
 
     return model
 
@@ -816,7 +845,8 @@ def predicting_llm(df_labeled, y_labeled, df_unlabeled, sim_params=None):
     if TRAINING_STYLE == "rl_kl":
         rl_kl_on_round(model, tok, prompts_labeled, np.asarray(y_labeled), df_labeled)
     else:
-        sft_on_round(model, tok, prompts_labeled, np.asarray(y_labeled))
+        sft_on_round(model, tok, prompts_labeled, np.asarray(y_labeled),
+                     prompts_unlabeled=prompts_unlabeled)
 
     # Read out on unlabeled
     preds = readout(model, tok, prompts_unlabeled)

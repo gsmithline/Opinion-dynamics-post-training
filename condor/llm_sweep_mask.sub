@@ -1,0 +1,27 @@
+# HTCondor submit file for LLM + KL-beta sweep WITH masked SFT loss (completion_only_loss=True).
+# Run after scp'ing the corrected llm_predictor.py to the cluster.
+# Submit with:  condor_submit_bid 15 condor/llm_sweep_mask.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_one.sh
+arguments         = $(tag) $(style) $(beta)
+
+request_cpus      = 2
+request_memory    = 16G
+request_disk      = 20G
+request_gpus      = 1
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct USE_LORA=1 LORA_R=32 LORA_ALPHA=64 SFT_SANITY=1"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta from condor/configs_mask.txt

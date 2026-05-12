@@ -1,0 +1,5 @@
+fj_sft_b0_egta        sft       0.0
+fj_sftkl_b0p01_egta   sft_kl    0.01
+fj_sftkl_b0p1_egta    sft_kl    0.1
+fj_sftkl_b1_egta      sft_kl    1.0
+fj_sftkl_b10_egta     sft_kl    10.0

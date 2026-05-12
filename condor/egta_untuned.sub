@@ -1,0 +1,30 @@
+# HTCondor submit file for untuned Qwen2.5-0.5B-Instruct readout, used as the
+# static (no-training) row of the EGTA tensor.
+# Submit with:  condor_submit_bid 15 condor/egta_untuned.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_untuned.sh
+
+tag               = fj_untuned_egta
+arguments         = $(tag)
+
+request_cpus      = 2
+request_memory    = 16G
+request_disk      = 20G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 12000)
+
+getenv            = False
+environment       = "HF_HOME=/is/cluster/gsmithline/.cache/huggingface REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct OUT_DIR=pokec_dataset/results"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1

@@ -1,0 +1,5 @@
+llm_sft_r8         sft     0.0
+llm_sftkl_r8_b0p3  sft_kl  0.3
+llm_sftkl_r8_b1    sft_kl  1.0
+llm_sftkl_r8_b3    sft_kl  3.0
+llm_sftkl_r8_b10   sft_kl  10.0

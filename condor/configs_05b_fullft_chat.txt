@@ -1,0 +1,8 @@
+llm_05b_ff_sft       sft       0.0
+llm_05b_ff_b0p01     sft_kl    0.01
+llm_05b_ff_b0p05     sft_kl    0.05
+llm_05b_ff_b0p1      sft_kl    0.1
+llm_05b_ff_b0p3      sft_kl    0.3
+llm_05b_ff_b1        sft_kl    1.0
+llm_05b_ff_b3        sft_kl    3.0
+llm_05b_ff_b10       sft_kl    10.0

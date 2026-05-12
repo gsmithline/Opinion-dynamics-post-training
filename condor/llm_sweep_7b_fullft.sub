@@ -1,0 +1,28 @@
+# HTCondor submit file for FULL-FT (no LoRA) Qwen2.5-7B, single KL-beta.
+# Target: H100 80GB. Uses 8-bit AdamW via bitsandbytes to fit optimizer state.
+# Submit with:  condor_submit_bid 15 condor/llm_sweep_7b_fullft.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_one.sh
+arguments         = $(tag) $(style) $(beta)
+
+request_cpus      = 4
+request_memory    = 128G
+request_disk      = 80G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 75000)
+
+getenv            = False
+environment       = "HF_HOME=/is/cluster/gsmithline/.cache/huggingface REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-7B-Instruct USE_LORA=0 BATCH_SIZE=1 GRAD_ACCUM=8 GRAD_CKPT=1 OPTIMIZER=adamw_bnb_8bit"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta from condor/configs_7b_fullft.txt
