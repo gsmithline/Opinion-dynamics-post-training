@@ -23,7 +23,7 @@ request_gpus      = 1
 requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
 
 getenv            = False
-environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct USE_LORA=0 SAVE_ADAPTER=1 SAVE_ADAPTER_PER_ROUND=1 SAVE_ADAPTER_EVERY_N_ROUNDS=5 SAVE_PROMPTS=1"
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct USE_LORA=0 USE_CHAT_TEMPLATE=1 SAVE_ADAPTER=1 SAVE_ADAPTER_PER_ROUND=1 SAVE_ADAPTER_EVERY_N_ROUNDS=5 SAVE_PROMPTS=1"
 
 output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
 error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
