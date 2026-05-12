@@ -489,15 +489,15 @@ class OpdynRLKLCollator:
         self.pad_token_id = int(pad_token_id)
 
     def __call__(self, examples):
-        max_len = max(len(ex["prompt_ids"]) for ex in examples)
+        max_len = max(len(ex["input_ids"]) for ex in examples)
         # Left-pad: causal-LM convention. Keeps the prompt's last token at the
         # rightmost position, so when we append candidate tokens they land at
         # well-defined relative offsets.
         ids, attn, log_r = [], [], []
         for ex in examples:
-            n = len(ex["prompt_ids"])
+            n = len(ex["input_ids"])
             pad = max_len - n
-            ids.append([self.pad_token_id] * pad + list(ex["prompt_ids"]))
+            ids.append([self.pad_token_id] * pad + list(ex["input_ids"]))
             attn.append([0] * pad + [1] * n)
             log_r.append(ex["log_rewards"])
         return {
@@ -740,7 +740,10 @@ def rl_kl_on_round(model, tok, prompts_labeled, y_labeled, df_labeled, prompts_u
         ids = tok.encode(prompt, add_special_tokens=False)
         if len(ids) > max_prompt_len:
             ids = ids[-max_prompt_len:]
-        rows.append({"prompt_ids": ids, "log_rewards": log_r.tolist()})
+        # Use "input_ids" key (not "prompt_ids") so trl SFTTrainer 1.2's
+        # _prepare_dataset detects this as already-tokenized and skips its
+        # text-tokenization pass. OpdynRLKLCollator below also reads "input_ids".
+        rows.append({"input_ids": ids, "log_rewards": log_r.tolist()})
 
     ds = Dataset.from_list(rows)
 
