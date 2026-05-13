@@ -1,0 +1,6 @@
+fj_sliver_age_high3_sft_b0_egta        sft       0.0   age_high3
+fj_sliver_age_high3_sftkl_b1_egta      sft_kl    1.0   age_high3
+fj_sliver_age_high3_sftkl_b10_egta     sft_kl    10.0  age_high3
+fj_sliver_region_high3_sft_b0_egta     sft       0.0   region_high3
+fj_sliver_region_high3_sftkl_b1_egta   sft_kl    1.0   region_high3
+fj_sliver_region_high3_sftkl_b10_egta  sft_kl    10.0  region_high3

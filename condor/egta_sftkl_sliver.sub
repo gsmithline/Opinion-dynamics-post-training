@@ -1,0 +1,53 @@
+# HTCondor submit file for sliver-training SFT-KL runs.
+# Each row in configs_egta_sftkl_sliver.txt specifies (tag, style, beta, subgroup).
+# The subgroup is passed to llm_predictor via the SFT_SUBGROUP env var:
+# the LM is fine-tuned only on labeled rows where the subgroup mask is True,
+# but FJ dynamics and readout still run on the full population. Eval is unchanged.
+#
+# Two presets are configured:
+#   age_high3     (observed feature, in prompt): ages {14, 15, 17}, |S in V'|=210
+#   region_high3  (unobserved feature, not in prompt): three high-mean Slovak regions, |S in V'|~104
+#
+# Real-time wandb tracking: each round logs track_mu_S, track_mu_not_S,
+# track_gap_S_minus_notS, plus a labeled/unlabeled 4-way split. The tracking
+# subgroup defaults to the SFT_SUBGROUP so each sliver run auto-tracks its
+# own S. To track a DIFFERENT subgroup (e.g., on a baseline run that trains
+# on full V' but you still want subgroup curves), add to environment:
+#   TRACK_SUBGROUP=age_high3
+# TRACK_SUBGROUP takes precedence over SFT_SUBGROUP for the tracking mask.
+#
+# Submit:
+#   condor_submit_bid 15 condor/egta_sftkl_sliver.sub
+#
+# After completion, plot via:
+#   python tools/plot_sliver_spillover.py \
+#       --subgroup age_high3 \
+#       --baseline-tags fj_sft_b0_egta fj_sftkl_b1_egta fj_sftkl_b10_egta \
+#       --sliver-tags   fj_sliver_age_high3_sft_b0_egta fj_sliver_age_high3_sftkl_b1_egta fj_sliver_age_high3_sftkl_b10_egta \
+#       --betas 0 1 10 \
+#       --out plots/sliver_age_high3.png
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_one.sh
+arguments         = $(tag) $(style) $(beta)
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct USE_LORA=0 USE_CHAT_TEMPLATE=1 SAVE_ADAPTER=1 SAVE_ADAPTER_PER_ROUND=1 SAVE_ADAPTER_EVERY_N_ROUNDS=5 SAVE_PROMPTS=1 SFT_SUBGROUP=$(subgroup)"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, subgroup from condor/configs_egta_sftkl_sliver.txt

@@ -25,6 +25,14 @@ from transformers import TrainerCallback
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.ensemble import HistGradientBoostingClassifier
 
+from subgroup_helper import Subgroup
+
+# Activate once at module load. None when SFT_SUBGROUP env var is unset, in
+# which case every code path below is byte-identical to pre-existing runs.
+_SUBGROUP: Subgroup | None = Subgroup.from_env()
+if _SUBGROUP is not None:
+    print(f"[subgroup] active at module load: tag={_SUBGROUP.tag}")
+
 try:
     import wandb
     _HAS_WANDB = True
@@ -846,13 +854,32 @@ def predicting_llm(df_labeled, y_labeled, df_unlabeled, sim_params=None):
     model, tok = _load_model()
     _STATE["round"] += 1
 
-    
+
     if _STATE["round"] == 1 and _HAS_WANDB and wandb.run is not None and sim_params:
         wandb.config.update({f"sim_{k}": v for k, v in sim_params.items()}, allow_val_change=True)
     print(f"\n===== [llm_predictor] round {_STATE['round']} | n_labeled={len(df_labeled)} n_unlabeled={len(df_unlabeled)} =====")
 
+    # SFT_SUBGROUP: optionally restrict the SFT training set to a sliver S of
+    # the labeled rows. Pure identity when _SUBGROUP is None.
+    # We keep the FULL labeled set (df_labeled, y_labeled) for the V' mean log
+    # below, so eval is identical to the baseline.
+    if _SUBGROUP is not None:
+        df_train, y_train = _SUBGROUP.apply_to_labeled(df_labeled, y_labeled)
+        print(f"[subgroup] tag={_SUBGROUP.tag}  "
+              f"trained_on_n={len(df_train)} / V'={len(df_labeled)}  "
+              f"mean(y_train)={float(np.mean(np.asarray(y_train, dtype=float))):.4f}  "
+              f"mean(y_V')={float(np.mean(np.asarray(y_labeled, dtype=float))):.4f}")
+    else:
+        df_train, y_train = df_labeled, y_labeled
+
     prompts_labeled = [build_prompt(r) for _, r in df_labeled.iterrows()]
     prompts_unlabeled = [build_prompt(r) for _, r in df_unlabeled.iterrows()]
+    # Prompts used for training are a subset when subgroup is active; otherwise
+    # we reuse prompts_labeled to avoid re-tokenizing.
+    prompts_train = (
+        [build_prompt(r) for _, r in df_train.iterrows()]
+        if _SUBGROUP is not None else prompts_labeled
+    )
 
     # --- diagnostics: run once on round 1 -------------------------------
     if _STATE["round"] == 1:
@@ -880,12 +907,14 @@ def predicting_llm(df_labeled, y_labeled, df_unlabeled, sim_params=None):
         if _HAS_WANDB and wandb.run is not None:
             wandb.log({"round": 0, **{f"base_{k}": v for k, v in base_ent.items()}})
 
-    # Train on D^(t-1) = (prompts_labeled, y_labeled)
+    # Train on D^(t-1) = (prompts_train, y_train).
+    # When SFT_SUBGROUP is unset, (prompts_train, y_train) == (prompts_labeled, y_labeled)
+    # and behavior is byte-identical to prior runs.
     if TRAINING_STYLE == "rl_kl":
-        rl_kl_on_round(model, tok, prompts_labeled, np.asarray(y_labeled), df_labeled,
+        rl_kl_on_round(model, tok, prompts_train, np.asarray(y_train), df_train,
                        prompts_unlabeled=prompts_unlabeled)
     else:
-        sft_on_round(model, tok, prompts_labeled, np.asarray(y_labeled),
+        sft_on_round(model, tok, prompts_train, np.asarray(y_train),
                      prompts_unlabeled=prompts_unlabeled)
 
     # Read out on unlabeled
@@ -909,16 +938,24 @@ def predicting_llm(df_labeled, y_labeled, df_unlabeled, sim_params=None):
         print(f"[wandb] active run: {wandb.run.id if wandb.run else None}")
         target_mean = float(np.mean(y_labeled))
         target_std = float(np.std(y_labeled))
-        wandb.log({
+        log_payload = {
             "round": _STATE["round"],
             "pred_mean": float(preds.mean()),
             "pred_std": float(preds.std()),
             "pred_min": float(preds.min()),
             "pred_max": float(preds.max()),
-            # Bias of LLM outputs vs the targets it was trained on this round
+            # Bias of LLM outputs vs the V' targets
             "pred_bias_vs_target": float(preds.mean() - target_mean),
             "pred_std_ratio_vs_target": float(preds.std() / max(target_std, 1e-9)),
             **ent,
-        })
+        }
+        if _SUBGROUP is not None:
+            y_train_arr = np.asarray(y_train, dtype=float)
+            log_payload["subgroup_tag"] = _SUBGROUP.tag
+            log_payload["target_mean_subgroup"] = float(np.mean(y_train_arr))
+            log_payload["target_std_subgroup"] = float(np.std(y_train_arr))
+            log_payload["n_subgroup"] = int(len(y_train_arr))
+            log_payload["pred_bias_vs_subgroup"] = float(preds.mean() - np.mean(y_train_arr))
+        wandb.log(log_payload)
 
     return preds

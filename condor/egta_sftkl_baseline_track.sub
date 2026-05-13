@@ -1,0 +1,42 @@
+# HTCondor submit file for FULL-V'-trained runs WITH real-time subgroup tracking.
+# These runs:
+#   - SFT on FULL V' (SFT_SUBGROUP NOT set, so no sliver filter)
+#   - Log per-subgroup means to wandb each round (TRACK_SUBGROUP set)
+# They are the real-time analog of the post-hoc baseline column in
+# plot_sliver_spillover.py. Compare panels side-by-side with egta_sftkl_sliver.sub
+# runs: if the sliver shrinks track_gap_unlabeled while this baseline does not,
+# that is the spillover signal.
+#
+# Pairing with sliver runs:
+#   fj_track_age_high3_sft_b0_egta       <->  fj_sliver_age_high3_sft_b0_egta
+#   fj_track_age_high3_sftkl_b1_egta     <->  fj_sliver_age_high3_sftkl_b1_egta
+#   fj_track_age_high3_sftkl_b10_egta    <->  fj_sliver_age_high3_sftkl_b10_egta
+#   (same pattern for region_high3)
+#
+# Submit:
+#   condor_submit_bid 15 condor/egta_sftkl_baseline_track.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_one.sh
+arguments         = $(tag) $(style) $(beta)
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key RETRAIN_T=30 SFT_EPOCHS=1 BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct USE_LORA=0 USE_CHAT_TEMPLATE=1 SAVE_ADAPTER=1 SAVE_ADAPTER_PER_ROUND=1 SAVE_ADAPTER_EVERY_N_ROUNDS=5 SAVE_PROMPTS=1 TRACK_SUBGROUP=$(tracker)"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/$(tag).log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue tag, style, beta, tracker from condor/configs_egta_sftkl_baseline_track.txt

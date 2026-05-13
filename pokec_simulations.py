@@ -28,6 +28,9 @@ import random
 import argparse
 import torch
 import torch.nn as nn
+
+from split_helper import get_new_order, get_n_labeled, split_suffix
+from subgroup_helper import Subgroup
 from torch.utils.data import DataLoader, TensorDataset
 
 
@@ -500,6 +503,32 @@ def run_simulation(
         "x_star_std": x_star_std,
     }
 
+    # Subgroup tracking. TRACK_SUBGROUP takes precedence; otherwise falls back
+    # to SFT_SUBGROUP so a sliver run automatically tracks its own subgroup.
+    # When neither is set, _tracker is None and per-round logging adds no keys.
+    _tracker: Subgroup | None = (
+        Subgroup.from_env("TRACK_SUBGROUP") or Subgroup.from_env("SFT_SUBGROUP")
+    )
+    _track_mask_full: np.ndarray | None = None
+    _track_mask_labeled: np.ndarray | None = None
+    _track_mask_unlabeled: np.ndarray | None = None
+    if _tracker is not None and df_labeled is not None and df_unlabeled is not None:
+        _df_full = pd.concat(
+            [df_labeled.reset_index(drop=True),
+             df_unlabeled.reset_index(drop=True)],
+            ignore_index=True,
+        )
+        _track_mask_full = _tracker.compute_mask(_df_full)
+        _track_mask_labeled = _track_mask_full[:n]
+        _track_mask_unlabeled = _track_mask_full[n:]
+        sim_params["track_subgroup_tag"] = _tracker.tag
+        sim_params["track_n_S"] = int(_track_mask_full.sum())
+        sim_params["track_n_S_labeled"] = int(_track_mask_labeled.sum())
+        sim_params["track_n_S_unlabeled"] = int(_track_mask_unlabeled.sum())
+        print(f"[track] subgroup={_tracker.tag}  |S|={int(_track_mask_full.sum())} "
+              f"(labeled={int(_track_mask_labeled.sum())}, "
+              f"unlabeled={int(_track_mask_unlabeled.sum())})")
+
     for t in range(retrain_steps):
         print(f"[run_simulation] round {t+1}/{retrain_steps} starting ({model_name})", flush=True)
 
@@ -507,12 +536,27 @@ def run_simulation(
         try:
             import wandb
             if wandb.run is not None:
-                wandb.log({
+                target_payload = {
                     "round": t + 1,
                     "target_std": float(np.std(x_labeled_prior)),
                     "target_mean": float(np.mean(x_labeled_prior)),
                     "target_range": float(np.max(x_labeled_prior) - np.min(x_labeled_prior)),
-                })
+                }
+                # Per-subgroup target_mean: pre-SFT, labeled-side analog of the existing
+                # target_mean. Adds nothing when no tracker is set.
+                if _track_mask_labeled is not None:
+                    sl = _track_mask_labeled
+                    if sl.any():
+                        target_payload["target_mean_S"] = float(np.mean(x_labeled_prior[sl]))
+                        target_payload["target_std_S"] = float(np.std(x_labeled_prior[sl]))
+                    if (~sl).any():
+                        target_payload["target_mean_not_S"] = float(np.mean(x_labeled_prior[~sl]))
+                        target_payload["target_std_not_S"] = float(np.std(x_labeled_prior[~sl]))
+                    if sl.any() and (~sl).any():
+                        target_payload["target_gap_S_minus_notS"] = (
+                            target_payload["target_mean_S"] - target_payload["target_mean_not_S"]
+                        )
+                wandb.log(target_payload)
         except Exception:
             pass
 
@@ -550,7 +594,7 @@ def run_simulation(
             if wandb.run is not None:
                 dist_to_innate = float(np.linalg.norm(x_temp - x_star) / np.sqrt(agent_num))
                 dist_to_uniform_mean = float(np.std(x_temp))  # 0 iff fully homogenized
-                wandb.log({
+                log_payload = {
                     "round": t + 1,
                     "opinion_mean": float(np.mean(x_temp)),
                     "opinion_std": float(np.std(x_temp)),
@@ -565,7 +609,37 @@ def run_simulation(
                     "mean_drift_from_innate": float(np.mean(x_temp) - x_star_mean),
                     "abs_mean_drift_from_innate": float(abs(np.mean(x_temp) - x_star_mean)),
                     "std_ratio_to_innate": float(np.std(x_temp) / max(x_star_std, 1e-9)),
-                })
+                }
+                # Real-time subgroup tracking. Adds nothing when no tracker is set.
+                if _track_mask_full is not None:
+                    mu_s = float(x_temp[_track_mask_full].mean())
+                    mu_ns = float(x_temp[~_track_mask_full].mean())
+                    # Four-way split: separates direct LM influence (unlabeled side)
+                    # from peer-mediated spillover (labeled side anchors innate).
+                    sl_mask = _track_mask_labeled
+                    su_mask = _track_mask_unlabeled
+                    x_lab = x_temp[:n]
+                    x_unl = x_temp[n:]
+                    mu_s_lab = float(x_lab[sl_mask].mean()) if sl_mask.any() else float("nan")
+                    mu_ns_lab = float(x_lab[~sl_mask].mean()) if (~sl_mask).any() else float("nan")
+                    mu_s_unl = float(x_unl[su_mask].mean()) if su_mask.any() else float("nan")
+                    mu_ns_unl = float(x_unl[~su_mask].mean()) if (~su_mask).any() else float("nan")
+                    log_payload.update({
+                        "subgroup_tag": _tracker.tag,
+                        "track_mu_S": mu_s,
+                        "track_mu_not_S": mu_ns,
+                        "track_gap_S_minus_notS": mu_s - mu_ns,
+                        "track_abs_gap": abs(mu_s - mu_ns),
+                        # Labeled side (anchored by innate via FJ).
+                        "track_mu_S_labeled": mu_s_lab,
+                        "track_mu_not_S_labeled": mu_ns_lab,
+                        "track_gap_labeled": mu_s_lab - mu_ns_lab,
+                        # Unlabeled side (driven directly by LM platform predictions).
+                        "track_mu_S_unlabeled": mu_s_unl,
+                        "track_mu_not_S_unlabeled": mu_ns_unl,
+                        "track_gap_unlabeled": mu_s_unl - mu_ns_unl,
+                    })
+                wandb.log(log_payload)
         except Exception as e:
             print(f"[sim] wandb log skipped: {e}")
 
@@ -626,13 +700,17 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
     peer_file_path = Path(param_folder + "hetero_peer_sus" + str(agent_num) + ".pkl")
 
     if not peer_file_path.exists():
-        
+
         peer_sus = np.clip(np.random.normal(loc=0.5, scale=0.1, size=agent_num), 0.01, 0.99)
         with open(peer_file_path, "wb") as file:
             pickle.dump(peer_sus, file)
     else:
         with open(peer_file_path, "rb") as file:
             peer_sus = pickle.load(file)
+    # Apply LABELED_SPLIT permutation to peer_sus and platform_sus if set.
+    _order = get_new_order(agent_num)
+    peer_sus = np.asarray(peer_sus)[_order]
+    platform_sus = np.asarray(platform_sus)[_order]
 
 
     steer_file_path = Path(param_folder + "hetero_steer_sus" + str(agent_num) + ".pkl")
@@ -685,6 +763,18 @@ def run_opinion_dynamics(innate_opinions, network_lcc, nodelist, model_name, X_f
         # Full per-round trajectory: shape (agent_num, retrain_T+1), columns = rounds 0..T
         with open(results_folder + cache_key + "_trajectory.pk", "wb") as f:
             pickle.dump(heatmap_res1, f)
+
+        # Subgroup mask sidecar: no-op when SFT_SUBGROUP is unset.
+        # Row order of mask matches the (labeled-first, then unlabeled) row order
+        # of heatmap_res1, so plot scripts can index trajectory rows directly.
+        _sg = Subgroup.from_env()
+        if _sg is not None and df_labeled is not None and df_unlabeled is not None:
+            _df_full = pd.concat(
+                [df_labeled.reset_index(drop=True),
+                 df_unlabeled.reset_index(drop=True)],
+                ignore_index=True,
+            )
+            _sg.save_sidecar(results_folder, cache_key, _df_full)
         
     
     # reference with perfect predictions are pre-generated
@@ -820,26 +910,37 @@ def main():
     else: 
         numerical_features_extended = numerical_features.copy()
     
-    # assume we don't have access to the label of the 20% population
-    n = int(len(df) * 0.8)
-    df_labeled = df.iloc[:n].copy()
-    df_unlabeled = df.iloc[n:].copy()
-    # we compute the sentiment scores as innate opinions of individuals
-    # the platform has access to the innate opinion of labeled group
-    # the platform has no access to the innate opinion of labeled group
+    # Step 1: compute or load y_label, y_unlabel_label from the POSITIONAL split.
+    # These cached files contain innate scores for the first-80% / last-20%
+    # row partition. We load them in positional form, then permute below.
+    n_pos = int(len(df) * 0.8)
     if not os.path.exists("pokec_dataset/parametric_params/y_label" + str(len(df)) + ".pk"):
-        y_label = compute_score(df_labeled, target_column, args)
-        y_unlabel_label = compute_score(df_unlabeled, target_column, args)
+        df_labeled_pos = df.iloc[:n_pos].copy()
+        df_unlabeled_pos = df.iloc[n_pos:].copy()
+        y_label_pos = compute_score(df_labeled_pos, target_column, args)
+        y_unlabel_label_pos = compute_score(df_unlabeled_pos, target_column, args)
         with open("pokec_dataset/parametric_params/y_label" + str(len(df)) + ".pk", "wb") as f:
-            pickle.dump(y_label, f)
+            pickle.dump(y_label_pos, f)
         with open("pokec_dataset/parametric_params/y_unlabel_label" + str(len(df)) + ".pk", "wb") as f:
-            pickle.dump(y_unlabel_label, f)
+            pickle.dump(y_unlabel_label_pos, f)
     else:
         with open("pokec_dataset/parametric_params/y_label" + str(len(df)) + ".pk", "rb") as f:
-            y_label = pickle.load(f)
+            y_label_pos = pickle.load(f)
         with open("pokec_dataset/parametric_params/y_unlabel_label" + str(len(df)) + ".pk", "rb") as f:
-            y_unlabel_label = pickle.load(f)
-   
+            y_unlabel_label_pos = pickle.load(f)
+
+    # Step 2: apply LABELED_SPLIT permutation (identity if env var unset).
+    # The permutation puts the active labeled subset at rows [0, n).
+    _order = get_new_order(len(df))
+    df = df.iloc[_order].reset_index(drop=True)
+    _innate_pos = np.array(list(y_label_pos) + list(y_unlabel_label_pos), dtype=np.float64)
+    _innate_new = _innate_pos[_order]
+    n = get_n_labeled(len(df))
+    y_label = list(_innate_new[:n])
+    y_unlabel_label = list(_innate_new[n:])
+    df_labeled = df.iloc[:n].copy()
+    df_unlabeled = df.iloc[n:].copy()
+
     # extract features from mixed data types
     filtered_textual_features = [text for text in textual_features if text != target_column]
     df_labeled[numerical_features_extended] = df_labeled[numerical_features_extended].apply(pd.to_numeric, errors="coerce")
@@ -849,20 +950,26 @@ def main():
     df_unlabeled[categorical_features] = df_unlabeled[categorical_features].astype(str)
     df_unlabeled[filtered_textual_features] = df_unlabeled[filtered_textual_features].astype(str)
 
-    
-    
-    if os.path.exists("pokec_dataset/labeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk"): 
-        with open("pokec_dataset/labeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "rb") as f:
+    # Split-aware cache filenames for the feature matrices: under LABELED_SPLIT,
+    # df_labeled/df_unlabeled are different rows, so we must NOT reuse the
+    # positional-split cached features.
+    _suffix = split_suffix()
+    _lab_feat = ("pokec_dataset/labeled_feature_matrix_" + target_column + _suffix
+                 + "_" + str(include_graph_features) + ".pk")
+    _unl_feat = ("pokec_dataset/unlabeled_feature_matrix_" + target_column + _suffix
+                 + "_" + str(include_graph_features) + ".pk")
+    if os.path.exists(_lab_feat):
+        with open(_lab_feat, "rb") as f:
             X_features_labeled = pickle.load(f)
         print("Feature matrix shape:", X_features_labeled.shape)
-        with open("pokec_dataset/unlabeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "rb") as f:
+        with open(_unl_feat, "rb") as f:
             X_features_unlabeled = pickle.load(f)
     else:
         X_features_labeled = extract_features(df_labeled, args, filtered_textual_features, numerical_features_extended)
         X_features_unlabeled = extract_features(df_unlabeled, args, filtered_textual_features, numerical_features_extended)
-        with open("pokec_dataset/labeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "wb") as f:
+        with open(_lab_feat, "wb") as f:
             pickle.dump(X_features_labeled, f)
-        with open("pokec_dataset/unlabeled_feature_matrix_" + target_column + "_" + str(include_graph_features) + ".pk", "wb") as f:
+        with open(_unl_feat, "wb") as f:
             pickle.dump(X_features_unlabeled, f)
     
     model_name = os.environ.get("MODEL_NAME", "llm")  # "neural_net" | "ridge" | "mean" | "perfect" | "llm"

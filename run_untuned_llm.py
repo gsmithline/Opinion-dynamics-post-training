@@ -16,6 +16,8 @@ import networkx as nx
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from split_helper import get_new_order, get_n_labeled
+
 try:
     import wandb
     _HAS_WANDB = True
@@ -249,7 +251,12 @@ def main():
 
     innate = np.array(y_lab + y_unl)
     agent_num = len(innate)
-    n = int(agent_num * 0.8)
+    # Apply LABELED_SPLIT permutation. Identity if env var unset.
+    _order = get_new_order(agent_num)
+    df = df.iloc[_order].reset_index(drop=True)
+    innate = innate[_order]
+    peer_sus = np.asarray(peer_sus)[_order]
+    n = get_n_labeled(agent_num)
     print(f"agent_num={agent_num}, n_labeled={n}, n_unlabeled={agent_num - n}")
 
     df_unlabeled = df.iloc[n:].copy()

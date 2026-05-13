@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import networkx as nx
 
+from split_helper import get_new_order, get_n_labeled
+
 # pandas 2.2 shim for older pickled profiles (same as run_untuned_llm.py).
 _orig_sd_init = pd.StringDtype.__init__
 def _sd_init(self, storage=None, na_value=None, *args, **kwargs):
@@ -67,7 +69,15 @@ def main() -> None:
 
     innate = np.array(y_lab + y_unl)
     agent_num = len(innate)
-    print(f"[free] agent_num={agent_num}  T={RETRAIN_T}  tag={RUN_TAG}")
+    # Apply LABELED_SPLIT permutation if set. Free FJ doesn't use the labeled/
+    # unlabeled distinction directly (no LM), but keeping it consistent so the
+    # written trajectory has labeled rows first (matches other baselines).
+    _order = get_new_order(agent_num)
+    df = df.iloc[_order].reset_index(drop=True)
+    innate = innate[_order]
+    peer_sus = np.asarray(peer_sus)[_order]
+    _n = get_n_labeled(agent_num)
+    print(f"[free] agent_num={agent_num}  n_labeled={_n}  T={RETRAIN_T}  tag={RUN_TAG}")
 
     nodelist = df["user_id"].values
     adj_mat = nx.to_numpy_array(network, nodelist=nodelist)

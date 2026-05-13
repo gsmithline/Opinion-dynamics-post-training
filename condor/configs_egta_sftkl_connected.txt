@@ -1,0 +1,9 @@
+fj_sft_b0_connected_egta        sft       0.0
+fj_sftkl_b0p01_connected_egta   sft_kl    0.01
+fj_sftkl_b0p1_connected_egta    sft_kl    0.1
+fj_sftkl_b1_connected_egta      sft_kl    1.0
+fj_sftkl_b2_connected_egta      sft_kl    2.0
+fj_sftkl_b3_connected_egta      sft_kl    3.0
+fj_sftkl_b5_connected_egta      sft_kl    5.0
+fj_sftkl_b7_connected_egta      sft_kl    7.0
+fj_sftkl_b10_connected_egta     sft_kl    10.0

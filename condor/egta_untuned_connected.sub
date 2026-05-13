@@ -1,0 +1,27 @@
+# Untuned baseline under the CONNECTED labeled split.
+# Same as egta_untuned.sub but with LABELED_SPLIT env var and a _connected tag.
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_untuned.sh
+arguments         = fj_untuned_connected_egta
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct OUT_DIR=pokec_dataset/results LABELED_SPLIT=/home/gsmithline/Opinion-dynamics-post-training/pokec_dataset/parametric_params/connected_split.pkl"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_untuned_connected_egta.out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_untuned_connected_egta.err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_untuned_connected_egta.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1
