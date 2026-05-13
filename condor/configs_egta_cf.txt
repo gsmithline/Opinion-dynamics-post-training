@@ -1,0 +1,4 @@
+fj_cf_b0p01_egta   0.01
+fj_cf_b0p1_egta    0.1
+fj_cf_b1_egta      1.0
+fj_cf_b10_egta     10.0

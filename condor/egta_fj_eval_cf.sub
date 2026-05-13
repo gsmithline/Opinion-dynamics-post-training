@@ -1,0 +1,31 @@
+# HTCondor submit file for the FJ EGTA cross-evaluation -- CF bundle.
+# K=10: 5 SFT-KL trained rows + 4 CF static rows + 1 untuned static row.
+# Mirrors egta_fj_eval.sub, swaps the 4 RL-KL rows for 4 CF rows.
+#
+# Submit (AFTER egta_cf.sub finishes -- this run needs the CF trajectories):
+#   condor_submit_bid 15 condor/egta_fj_eval_cf.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_egta_fj_cf.sh
+arguments         =
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training EGTA_REPO=/home/gsmithline/evolutionary-prediction-games CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SNAPSHOTS='5 10 15 20 25 30' PROMPTS_SCOPE=labeled BATCH_SIZE=64 MAX_LENGTH=200 OUT=/home/gsmithline/Opinion-dynamics-post-training/pokec_dataset/results/egta_fj_bundle_cf.npz WANDB_NAME=egta_fj_bundle_cf"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval_cf.out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval_cf.err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval_cf.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1
