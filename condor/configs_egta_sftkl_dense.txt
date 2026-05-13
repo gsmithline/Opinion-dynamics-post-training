@@ -1,0 +1,4 @@
+fj_sftkl_b2_egta      sft_kl    2.0
+fj_sftkl_b3_egta      sft_kl    3.0
+fj_sftkl_b5_egta      sft_kl    5.0
+fj_sftkl_b7_egta      sft_kl    7.0
