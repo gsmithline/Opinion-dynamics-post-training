@@ -1,0 +1,42 @@
+# HTCondor submit file for the bundled FJ EGTA cross-evaluation.
+# Single job: loads K=10 interventions (5 SFT + 4 RL-KL + 1 untuned-static)
+# at S=6 snapshots {5,10,15,20,25,30}, computes M[t,i,j] via NLL, writes
+# pokec_dataset/results/egta_fj_bundle.npz.
+#
+# round_0 is intentionally skipped: no training has happened at t=0, so every
+# intervention's model is the base model and M[0,i,j] would be identical
+# across (i,j). Starting at round_5 gives the first informative snapshot.
+#
+# Submit:
+#   condor_submit_bid 15 condor/egta_fj_eval.sub
+#
+# Prereqs:
+#   * All egta_sftkl + egta_rlkl + egta_untuned jobs finished and wrote their
+#     trajectories + per-round adapters.
+#   * EGTA_REPO ($HOME/evolutionary-prediction-games) is cloned on the
+#     cluster with LLM_experiments/egta_fj.py present.
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_egta_fj.sh
+arguments         =
+
+request_cpus      = 2
+request_memory    = 32G
+request_disk      = 60G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training EGTA_REPO=/home/gsmithline/evolutionary-prediction-games CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct SNAPSHOTS='5 10 15 20 25 30' PROMPTS_SCOPE=labeled BATCH_SIZE=64 MAX_LENGTH=200 OUT=/home/gsmithline/Opinion-dynamics-post-training/pokec_dataset/results/egta_fj_bundle.npz WANDB_NAME=egta_fj_bundle"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval.out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval.err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/egta_fj_eval.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1
