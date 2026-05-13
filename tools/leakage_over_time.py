@@ -107,7 +107,7 @@ def main() -> None:
     if betas_for_color:
         b_arr = np.array(betas_for_color, dtype=float)
         b_log = np.log10(np.clip(b_arr, 1e-3, 1e3))
-        norm_b = (b_log - b_log.min()) / max(b_log.ptp(), 1e-9)
+        norm_b = (b_log - b_log.min()) / max(float(np.ptp(b_log)), 1e-9)
     cmap = plt.cm.viridis
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), constrained_layout=True)
