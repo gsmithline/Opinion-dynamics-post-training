@@ -1,0 +1,31 @@
+# Single-job CF anchor at very large beta. Produces the "CF-readout untuned"
+# baseline: q* propto pi_ref * h_p^(1/1000) is effectively pi_ref, so E_{q*}[v]
+# converges to the candidate-restricted marginal mean of the base LM.
+#
+# Submit:
+#   condor_submit_bid 15 condor/egta_cf_anchor.sub
+
+universe          = vanilla
+executable        = /home/gsmithline/Opinion-dynamics-post-training/condor/run_cf_fj.sh
+arguments         = fj_cf_b1000_egta 1000.0
+
+request_cpus      = 2
+request_memory    = 24G
+request_disk      = 30G
+request_gpus      = 1
+requirements      = (TARGET.CUDAGlobalMemoryMb >= 16000) && (Machine =!= "g054.internal.cluster.is.localnet")
+
+getenv            = False
+environment       = "REPO=/home/gsmithline/Opinion-dynamics-post-training CONDA_SH=/home/gsmithline/miniconda3/etc/profile.d/conda.sh ENV_NAME=opdyn WANDB_KEY_FILE=/home/gsmithline/.wandb_key BASE_MODEL=Qwen/Qwen2.5-0.5B-Instruct RETRAIN_T=30 CF_N_BINS=51 OUT_DIR=pokec_dataset/results"
+
+output            = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_cf_b1000_egta.out
+error             = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_cf_b1000_egta.err
+log               = /home/gsmithline/Opinion-dynamics-post-training/condor/logs/fj_cf_b1000_egta.log
+
+notification      = Complete
+notify_user       = gabriel.smithline@tue.ellis.eu
+
+max_retries       = 1
+on_exit_hold      = (ExitCode =!= 0)
+
+queue 1
