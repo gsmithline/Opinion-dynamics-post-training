@@ -1,0 +1,3 @@
+fj_lr5e4_sliver_alc_abs_egta      sft  0.0  alc_abstinent      alc_abstinent
+fj_lr5e4_sliver_alc_nonabs_egta   sft  0.0  alc_non_abstinent  alc_non_abstinent
+fj_lr5e4_track_alc_abs_egta       sft  0.0  none               alc_abstinent

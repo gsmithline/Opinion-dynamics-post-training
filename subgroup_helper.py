@@ -110,9 +110,11 @@ class Subgroup:
 
     @classmethod
     def from_env(cls, var: str = "SFT_SUBGROUP") -> Optional["Subgroup"]:
-        """Read env var `var` (default SFT_SUBGROUP). Returns None when unset."""
+        """Read env var `var` (default SFT_SUBGROUP). Returns None when unset.
+        Also treats the sentinels 'none', '_', '__none__' (case-insensitive) as None,
+        so condor configs can pass an explicit no-filter value when needed."""
         spec = os.environ.get(var, "").strip()
-        if not spec:
+        if not spec or spec.lower() in ("none", "_", "__none__"):
             return None
         return cls.from_spec(spec)
 
