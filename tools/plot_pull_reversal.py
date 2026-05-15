@@ -115,6 +115,12 @@ def main():
     p.add_argument("--feature", required=True, help="label for the figure (e.g., age)")
     p.add_argument("--high", required=True, help="preset name for high-mean S (e.g., age_high3)")
     p.add_argument("--low", required=True, help="preset name for low-mean S (e.g., age_low3)")
+    p.add_argument("--high-tag", default=None,
+                   help="Override: the subgroup substring used in run tags for HIGH. "
+                        "Defaults to --high. Use when condor tags differ from preset names, "
+                        "e.g. --high alc_abstinent --high-tag alc_abs.")
+    p.add_argument("--low-tag", default=None,
+                   help="Override for LOW tag substring (defaults to --low).")
     p.add_argument("--betas", nargs="+", type=float, required=True,
                    help="Beta values to plot, one panel per beta")
     p.add_argument("--ref", default=None,
@@ -162,12 +168,15 @@ def main():
     if n_panels == 1:
         axes = [axes]
 
+    high_tag_str = args.high_tag if args.high_tag else args.high
+    low_tag_str = args.low_tag if args.low_tag else args.low
+
     missing = []
     for ax, beta in zip(axes, args.betas):
-        tag_sh = _beta_to_tag("sliver", args.high, beta, "sliver")
-        tag_sl = _beta_to_tag("sliver", args.low, beta, "sliver")
-        tag_th = _beta_to_tag("track", args.high, beta, "track")
-        tag_tl = _beta_to_tag("track", args.low, beta, "track")
+        tag_sh = _beta_to_tag("sliver", high_tag_str, beta, "sliver")
+        tag_sl = _beta_to_tag("sliver", low_tag_str, beta, "sliver")
+        tag_th = _beta_to_tag("track", high_tag_str, beta, "track")
+        tag_tl = _beta_to_tag("track", low_tag_str, beta, "track")
 
         traj_sh = _load_traj(results_dir, tag_sh)
         traj_sl = _load_traj(results_dir, tag_sl)
