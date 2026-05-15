@@ -78,7 +78,7 @@ class Subgroup:
         mask = self.compute_mask(df_full)
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        out = out_dir / f"llm_{run_tag}_subgroup_mask.pk"
+        out = out_dir / f"{run_tag}_subgroup_mask.pk"
         with open(out, "wb") as f:
             pickle.dump({
                 "tag": self.tag,
@@ -179,10 +179,19 @@ def _age_high3_fn(df: pd.DataFrame) -> np.ndarray:
     return a.isin([14, 15, 17]).to_numpy()
 
 
+# Bottom-3 lowest-mean age buckets (16, 21, 23). Symmetric counterpart to
+# age_high3 for testing pull-direction reversal (sliver on low-mean S should
+# pull V\S DOWN, mirroring sliver on high-mean S pulling V\S UP).
+def _age_low3_fn(df: pd.DataFrame) -> np.ndarray:
+    a = pd.to_numeric(df["age"], errors="coerce")
+    return a.isin([16, 21, 23]).to_numpy()
+
+
 PRESETS: dict[str, Subgroup] = {
     "age_young": Subgroup(tag="age_young", custom_fn=_age_young_fn),
     "age_older": Subgroup(tag="age_older", custom_fn=_age_older_fn),
     "age_high3": Subgroup(tag="age_high3", custom_fn=_age_high3_fn),
+    "age_low3": Subgroup(tag="age_low3", custom_fn=_age_low3_fn),
     "region_high3": Subgroup(
         tag="region_high3",
         column="region",
