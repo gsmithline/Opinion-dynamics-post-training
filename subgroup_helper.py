@@ -187,11 +187,20 @@ def _age_low3_fn(df: pd.DataFrame) -> np.ndarray:
     return a.isin([16, 21, 23]).to_numpy()
 
 
+# Reference subset for the symmetric pull test: ages NOT in age_high3 or
+# age_low3. Used as a fixed readout population so the two sliver effects
+# are measured against the same users (avoids V\S definition confound).
+def _age_mid_fn(df: pd.DataFrame) -> np.ndarray:
+    a = pd.to_numeric(df["age"], errors="coerce")
+    return (~a.isin([14, 15, 16, 17, 21, 23])).to_numpy()
+
+
 PRESETS: dict[str, Subgroup] = {
     "age_young": Subgroup(tag="age_young", custom_fn=_age_young_fn),
     "age_older": Subgroup(tag="age_older", custom_fn=_age_older_fn),
     "age_high3": Subgroup(tag="age_high3", custom_fn=_age_high3_fn),
     "age_low3": Subgroup(tag="age_low3", custom_fn=_age_low3_fn),
+    "age_mid": Subgroup(tag="age_mid", custom_fn=_age_mid_fn),
     "region_high3": Subgroup(
         tag="region_high3",
         column="region",
