@@ -195,12 +195,29 @@ def _age_mid_fn(df: pd.DataFrame) -> np.ndarray:
     return (~a.isin([14, 15, 16, 17, 21, 23])).to_numpy()
 
 
+# Alcohol-based binary partition (alcohol IS in prompt). Strongest single-feature
+# signal in V': |S in V'|=310, mu_S=0.564 (vs V' mean 0.527), Delta_mu=+0.037.
+# Used for binary reversal test where each direction measures pull on its
+# complementary population (train on abstinent -> watch non-abstinent move,
+# train on non-abstinent -> watch abstinent move).
+def _alc_abstinent_fn(df: pd.DataFrame) -> np.ndarray:
+    a = df["relation_to_alcohol"].astype(object)
+    return (a == "abstinent").fillna(False).to_numpy()
+
+
+def _alc_non_abstinent_fn(df: pd.DataFrame) -> np.ndarray:
+    a = df["relation_to_alcohol"].astype(object)
+    return ((~a.isna()) & (a != "abstinent")).to_numpy()
+
+
 PRESETS: dict[str, Subgroup] = {
     "age_young": Subgroup(tag="age_young", custom_fn=_age_young_fn),
     "age_older": Subgroup(tag="age_older", custom_fn=_age_older_fn),
     "age_high3": Subgroup(tag="age_high3", custom_fn=_age_high3_fn),
     "age_low3": Subgroup(tag="age_low3", custom_fn=_age_low3_fn),
     "age_mid": Subgroup(tag="age_mid", custom_fn=_age_mid_fn),
+    "alc_abstinent": Subgroup(tag="alc_abstinent", custom_fn=_alc_abstinent_fn),
+    "alc_non_abstinent": Subgroup(tag="alc_non_abstinent", custom_fn=_alc_non_abstinent_fn),
     "region_high3": Subgroup(
         tag="region_high3",
         column="region",

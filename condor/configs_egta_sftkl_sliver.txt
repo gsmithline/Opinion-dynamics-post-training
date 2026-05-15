@@ -10,3 +10,9 @@ fj_sliver_age_low3_sftkl_b10_egta      sft_kl    10.0  age_low3
 fj_sliver_region_low3_sft_b0_egta      sft       0.0   region_low3
 fj_sliver_region_low3_sftkl_b1_egta    sft_kl    1.0   region_low3
 fj_sliver_region_low3_sftkl_b10_egta   sft_kl    10.0  region_low3
+fj_sliver_alc_abs_sft_b0_egta          sft       0.0   alc_abstinent
+fj_sliver_alc_abs_sftkl_b1_egta        sft_kl    1.0   alc_abstinent
+fj_sliver_alc_abs_sftkl_b10_egta       sft_kl    10.0  alc_abstinent
+fj_sliver_alc_nonabs_sft_b0_egta       sft       0.0   alc_non_abstinent
+fj_sliver_alc_nonabs_sftkl_b1_egta     sft_kl    1.0   alc_non_abstinent
+fj_sliver_alc_nonabs_sftkl_b10_egta    sft_kl    10.0  alc_non_abstinent
